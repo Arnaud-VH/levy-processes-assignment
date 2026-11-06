@@ -10,3 +10,14 @@ Part 1 saves the option data as a CSV. Parts 2 reads this CSV, estimates the mod
 
 ## Note
 I put some comments at the top of each file with what I think should go in there. Of course this structure is just my idea and a guide. If there are parts you think should be different, or things need to be added/removed, feel free to do so. 
+
+## Dev Update: 6/11/2026
+Simulation code is up and running. To run the code follow the steps below:
+
+## Set-up
+From the repo root `levy-processes-assignment` type:
+- `python -m pip install -e .`
+- `python -m pip install pytest`
+
+You can then run the files from the root folder and the imports should work. Also you can run the tests with:
+`python -m pytest`
