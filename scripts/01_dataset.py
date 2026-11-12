@@ -1,10 +1,16 @@
 from pathlib import Path
 import math
 import pandas as pd
+import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_FILE = ROOT / "data" / "Call_data.xlsx"
 
+
+# Market Parameters — 31/03/2026
+S0 = 6528.52               
+q = 0.012856               
+r = 0.0365529             
 REFERENCE_DATE = pd.Timestamp("2026-03-31")
 
 # Step (in simple returns r_k) per maturity, for the first four maturities.
@@ -16,6 +22,17 @@ STEPS = {
     108: 0.0325,
 }
 
+# Special cases
+T_SPECIAL_NONUNIFORM = 143   # 21/08/2026
+T_SPECIAL_FOUR = 171   # 18/09/2026
+
+N_STRIKES        = 15 #strikes per maturity
+N_STRIKES_LAST   = 4 #strike for the last maturity
+
+def forward_price(T):
+    return S0 * math.exp((r - q) * T)
+
+# Data loading
 class DataHandler:
     def __init__(self, path=DATA_FILE):
         self.df = self._load_data(path)
@@ -39,18 +56,6 @@ class DataHandler:
         raw["T"] = (raw["maturity"] - REFERENCE_DATE).dt.days / 365.0
 
         return raw[["maturity", "T", "strike", "price"]].reset_index(drop=True)
-
-data = DataHandler()                    
-
-# Special cases
-T_SPECIAL_NONUNIFORM = 143   # 21/08/2026
-T_SPECIAL_FOUR = 171   # 18/09/2026
-
-N_STRIKES        = 15 #strikes per maturity
-N_STRIKES_LAST   = 4 #strike for the last maturity
-
-def forward_price(T):
-    return data.df['SP500'].item() * math.exp((data.df['US_12M_rate'].item() - data.df['SP500_Dividend_yld'].item()) * T)
 
 # Grid construction
 def _greedy_closest(targets, available):
@@ -77,7 +82,7 @@ def build_uniform_grid(available, F_T, step, n=N_STRIKES):
     strikes = sorted(available)
     k_center = min(strikes, key=lambda k: abs(k - F_T))
     half = n // 2 #because we impose all the uniform grids to be odd
-    targets = [k_center + j * step * data.df['SP500'].item() for j in range(-half, half + 1)]
+    targets = [k_center + j * step * S0 for j in range(-half, half + 1)]
     return sorted(_greedy_closest(targets, strikes))
 
 #contruction of the Grid for 21/08/2026
@@ -152,7 +157,7 @@ def build_calibration_grid(handler):
             rows.append(dict(maturity=row["maturity"], T=row["T"], strike=float(K), price=float(row["price"])))
 
     grid = pd.DataFrame(rows) #grid data
-    grid["r_k"] = (grid["strike"] - data.df['SP500'].item()) / data.df['SP500'].item() #grid data in returns
+    grid["r_k"] = (grid["strike"] - S0) / S0 #grid data in returns
     return grid
 
 #function that stores the grid data into a dictionary
@@ -171,22 +176,66 @@ def print_apx_c_matrix(grid):
     pivot = grid.pivot_table(index="strike", columns="maturity", values="price")
     pivot.columns = [c.strftime("%d/%m/%Y") for c in pivot.columns] #converts the data to be presented in the standard format day/month/year
     #build strike labels with the simple-return percentage
-    r_k = (pivot.index - data.df['SP500'].item())/data.df['SP500'].item()
+    r_k = (pivot.index - S0)/S0
     strike_labels = [f"{int(k)} ({v*100:+.2f}%)" for k,v in zip(pivot.index, r_k)]
     pivot.index = strike_labels
     #round prices to 2 decimals and leave missing cells blank
     pivot = pivot.round(2).fillna("")
     print(pivot.to_string())
+
+#using matplotlib.pyplot library to produce the same table but as a PNG
+def save_apx_c_matrix_as_png(grid, filename="sp500_table.png"):
+    pivot = grid.pivot_table(index="strike", columns="maturity", values="price")
+    pivot.columns = [c.strftime("%d/%m/%Y") for c in pivot.columns]
+    r_k = (pivot.index - S0) / S0
+    pivot.index = [f"{int(k)} ({v*100:+.2f}%)" for k, v in zip(pivot.index, r_k)]
+    pivot = pivot.round(2).fillna("")
+
+    fig, ax = plt.subplots(figsize=(9, 14))
+    ax.axis("off")
+
+    # Título ajustado (x=0.42)
+    ax.set_title("S&P 500 Call Option Prices",
+                 fontsize=14, fontweight="bold", pad=4, x=0.42)
+
+    # Tabela colada ao topo (98% da altura)
+    table = ax.table(
+        cellText=pivot.values,
+        rowLabels=pivot.index,
+        colLabels=pivot.columns,
+        cellLoc="right",
+        rowLoc="right",
+        bbox=[0.0, 0.0, 1.0, 0.98],
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.3)
+
+    for (row, col), cell in table.get_celld().items():
+        # Remove todas as grelhas
+        cell.set_linewidth(0)
+        cell.set_facecolor("white")
+        cell.set_edgecolor("white")
+        
+        # Cabeçalho e coluna dos strikes em bold
+        if row == 0 or col == -1:
+            cell.set_text_props(weight="bold")
+
+    plt.savefig(filename, dpi=200, bbox_inches="tight", facecolor="white")
+    plt.close()
+    print(f"Saved: {filename}")
  
     
 # main
-grid = build_calibration_grid(data)
+handler = DataHandler()
+grid = build_calibration_grid(handler)
 
 print("=" * 72)
 print("Market Data:")
-print(data.df)
+print(handler.df)
 print("=" * 72)
-print(f"Valid SPXW calls: {len(data.df_calls)}")
+print(f"Valid SPXW calls: {len(handler.df_calls)}")
 print("=" * 72)
 print("Selected grid:")
 print(grid.to_string(index=False))
@@ -207,3 +256,4 @@ print(f"Entries in the dictionary: {len(selected)}")
 print("=" * 72)
 print("S&P500 Call Option Prices:")
 print_apx_c_matrix(grid)
+save_apx_c_matrix_as_png(grid)
