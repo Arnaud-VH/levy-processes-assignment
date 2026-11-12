@@ -1,7 +1,6 @@
 from pathlib import Path
 import math
 import pandas as pd
-import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_FILE = ROOT / "data" / "Call_data.xlsx"
@@ -182,49 +181,6 @@ def print_apx_c_matrix(grid):
     #round prices to 2 decimals and leave missing cells blank
     pivot = pivot.round(2).fillna("")
     print(pivot.to_string())
-
-#using matplotlib.pyplot library to produce the same table but as a PNG
-def save_apx_c_matrix_as_png(grid, filename="sp500_table.png"):
-    pivot = grid.pivot_table(index="strike", columns="maturity", values="price")
-    pivot.columns = [c.strftime("%d/%m/%Y") for c in pivot.columns]
-    r_k = (pivot.index - S0) / S0
-    pivot.index = [f"{int(k)} ({v*100:+.2f}%)" for k, v in zip(pivot.index, r_k)]
-    pivot = pivot.round(2).fillna("")
-
-    fig, ax = plt.subplots(figsize=(9, 14))
-    ax.axis("off")
-
-    # Título ajustado (x=0.42)
-    ax.set_title("S&P 500 Call Option Prices",
-                 fontsize=14, fontweight="bold", pad=4, x=0.42)
-
-    # Tabela colada ao topo (98% da altura)
-    table = ax.table(
-        cellText=pivot.values,
-        rowLabels=pivot.index,
-        colLabels=pivot.columns,
-        cellLoc="right",
-        rowLoc="right",
-        bbox=[0.0, 0.0, 1.0, 0.98],
-    )
-
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 1.3)
-
-    for (row, col), cell in table.get_celld().items():
-        # Remove todas as grelhas
-        cell.set_linewidth(0)
-        cell.set_facecolor("white")
-        cell.set_edgecolor("white")
-        
-        # Cabeçalho e coluna dos strikes em bold
-        if row == 0 or col == -1:
-            cell.set_text_props(weight="bold")
-
-    plt.savefig(filename, dpi=200, bbox_inches="tight", facecolor="white")
-    plt.close()
-    print(f"Saved: {filename}")
  
     
 # main
@@ -256,4 +212,3 @@ print(f"Entries in the dictionary: {len(selected)}")
 print("=" * 72)
 print("S&P500 Call Option Prices:")
 print_apx_c_matrix(grid)
-save_apx_c_matrix_as_png(grid)
