@@ -6,7 +6,7 @@ Implementation of the simulation for the VG-CIR model.
 from dataclasses import dataclass
 
 import numpy as np
-from vg_cir.characteristic import martingale_correction
+from vg_cir.characteristic import martingale_correction, psi_vg
 
 def simulate_cir(kappa, eta, lam, y0, T, n_steps, n_paths, rng):
     """
@@ -70,9 +70,12 @@ class SimulationResult:
     X: np.ndarray
 
 
-def simulate_vgcir(params, market, T, n_steps, n_paths, seed=None):
+def simulate_vgcir(params, market, T, n_steps, n_paths, seed=None, schoutens_correction=False):
     """
-    Simulates VG-CIR stock price paths, following Schoutens (2003) section 9.3.2, all 5 steps. 
+    Simulates VG-CIR stock price paths, following Schoutens (2003) section 9.3.2, all 5 steps.
+    By default we use the same martingale correction as the calibration in 02_estimate.py: exp(X_{Y_t} - psi(-i) Y_t).
+    With schoutens_correction=True we divide by E[exp(X_{Y_t})] like the book (section 7.3),
+    this is only used to check our simulation against the book's numbers.
     """
     p = params
     rng_cir, rng_up, rng_down = [np.random.default_rng(s) for s in np.random.SeedSequence(seed).spawn(3)]
@@ -90,8 +93,14 @@ def simulate_vgcir(params, market, T, n_steps, n_paths, seed=None):
     X = np.zeros_like(Y)
     X[:, 1:] = np.cumsum(dX, axis=1)
 
-    #(v) stock price with the martingale correction (section 7.3)
-    correction = martingale_correction(p, t)
-    S = market.S0 * np.exp((market.r - market.q) * t) * np.exp(X) / correction
+    #(v) stock price with the martingale correction
+    if schoutens_correction:
+        #book version (section 7.3), deterministic correction
+        correction = martingale_correction(p, t)
+        S = market.S0 * np.exp((market.r - market.q) * t) * np.exp(X) / correction
+    else:
+        #calibration version, the correction runs on business time so exp(X - psi(-i) Y) is a martingale along the whole path
+        psi = psi_vg(-1j, p.C, p.G, p.M).real
+        S = market.S0 * np.exp((market.r - market.q) * t) * np.exp(X - psi * Y)
 
     return SimulationResult(t=t, S=S, y=y, Y=Y, X=X)

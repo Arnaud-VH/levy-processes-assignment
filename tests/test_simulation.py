@@ -20,8 +20,8 @@ N_PATHS = 50_000
 
 @pytest.fixture(scope="module")
 def sim():
-    """One simulation shared by all tests. Same setup as Table 9.1 (p. 133) but more paths"""
-    return simulate_vgcir(P, MARKET, T, N_STEPS, N_PATHS, seed=42)
+    """One simulation shared by all tests. Same setup as Table 9.1 (p. 131) but more paths. Book correction, to compare with the book's formulas"""
+    return simulate_vgcir(P, MARKET, T, N_STEPS, N_PATHS, seed=42, schoutens_correction=True)
 
 
 def assert_close(sample, theory, n_se=3):

@@ -12,7 +12,8 @@ import numpy as np
 from vg_cir.params import ESTIMATED_VGCIR, DATASET_MARKET
 from vg_cir.simulation import simulate_vgcir
 
-FIG_DIR = Path("results/figures")
+#Folder of the repo (one above scripts/), so the outputs go to the same results/ wherever the script is run from
+FIG_DIR = Path(__file__).resolve().parent.parent / "results" / "figures"
 
 #Estimated parameters from Part 2
 PARAMS = ESTIMATED_VGCIR
