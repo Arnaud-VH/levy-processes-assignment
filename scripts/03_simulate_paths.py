@@ -9,14 +9,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from vg_cir.params import BOOK_MARKET, BOOK_VGCIR
+from vg_cir.params import ESTIMATED_VGCIR, DATASET_MARKET
 from vg_cir.simulation import simulate_vgcir
 
 FIG_DIR = Path("results/figures")
 
-#TODO: swap for the estimated parameters (Part 2) and our dataset's S0, r, q (Part 1)
-PARAMS = BOOK_VGCIR
-MARKET = BOOK_MARKET
+#Estimated parameters from Part 2
+PARAMS = ESTIMATED_VGCIR
+MARKET = DATASET_MARKET
 
 T = 1.0
 N_STEPS = 250
@@ -33,6 +33,7 @@ def plot_components(sim):
 
     axes[2].plot(sim.Y[0], sim.X[0])
     axes[2].set_title("$X_t$ on $[0, Y_T]$ (VG in business time)")
+    axes[2].set_xlabel("business time $Y$")
 
     axes[3].plot(sim.t, sim.X[0])
     axes[3].set_title("$X_{Y_t}$ (time-changed VG)")
@@ -60,7 +61,7 @@ def plot_many_paths(sim, market, shown=20):
     axes[2].set_xlabel("t (years)")
     axes[2].legend()
 
-    fig.suptitle(f"Showing {shown}/100 simulated VG-CIR paths")
+    fig.suptitle(f"Showing {shown}/{sim.S.shape[0]} simulated VG-CIR paths")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "vgcir_paths.png", dpi=150)
 
