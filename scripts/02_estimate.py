@@ -1,9 +1,3 @@
-"""
-Part 2 of project.
-Loads the option data from the CSV and appropriate functions from param_estimation.py to estimate the model parameters.
-Save those parameters in a file for the later parts. 
-"""
-import csv
 import numpy as np
 from pathlib import Path
 import math
@@ -180,77 +174,7 @@ def grid_to_dict(grid):
         value = float(row["price"])
         result[key] = value
     return result
-
-#function that constructs a table that compacts all the information regarding the chosen dataset <-> similar to the Appendix C of Schoutens
-def print_apx_c_matrix(grid):
-    #rows = strikes (with r_k % in parentheses), columns = maturity dates
-    pivot = grid.pivot_table(index="strike", columns="maturity", values="price")
-    pivot.columns = [c.strftime("%d/%m/%Y") for c in pivot.columns] #converts the data to be presented in the standard format day/month/year
-    #build strike labels with the simple-return percentage
-    r_k = (pivot.index - S0)/S0
-    strike_labels = [f"{int(k)} ({v*100:+.2f}%)" for k,v in zip(pivot.index, r_k)]
-    pivot.index = strike_labels
-    #round prices to 2 decimals and leave missing cells blank
-    pivot = pivot.round(2).fillna("")
-    print(pivot.to_string())
-
-#using matplotlib.pyplot library to produce the same table but as a PNG
-def save_apx_c_matrix_as_png(grid, filename="sp500_table.png"):
-    pivot = grid.pivot_table(index="strike", columns="maturity", values="price")
-    pivot.columns = [c.strftime("%d/%m/%Y") for c in pivot.columns]
-    r_k = (pivot.index - S0) / S0
-    pivot.index = [f"{int(k)} ({v*100:+.2f}%)" for k, v in zip(pivot.index, r_k)]
-    pivot = pivot.round(2).fillna("")
-
-    fig, ax = plt.subplots(figsize=(9, 14))
-    ax.axis("off")
-
-    # Título ajustado (x=0.42)
-    ax.set_title("S&P 500 Call Option Prices",
-                 fontsize=14, fontweight="bold", pad=4, x=0.42)
-
-    # Tabela colada ao topo (98% da altura)
-    table = ax.table(
-        cellText=pivot.values,
-        rowLabels=pivot.index,
-        colLabels=pivot.columns,
-        cellLoc="right",
-        rowLoc="right",
-        bbox=[0.0, 0.0, 1.0, 0.98],
-    )
-
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 1.3)
-
-    for (row, col), cell in table.get_celld().items():
-        # Remove todas as grelhas
-        cell.set_linewidth(0)
-        cell.set_facecolor("white")
-        cell.set_edgecolor("white")
-        
-        # Cabeçalho e coluna dos strikes em bold
-        if row == 0 or col == -1:
-            cell.set_text_props(weight="bold")
-
-    plt.savefig(filename, dpi=200, bbox_inches="tight", facecolor="white")
-    plt.close()
-    print(f"Saved: {filename}")
-
-
-
-handler = DataHandler()
-grid = build_calibration_grid(handler)
-
-
-K = grid["strike"].to_numpy(dtype=float)
-T = grid["T"].to_numpy(dtype=float)
-r = np.full(len(K), 0.0365529)
-market = grid["price"].to_numpy(dtype=float)
-
-
-u = np.linspace(1e-6, 500,2001)
-
+    
 def eta_VG(u,mu,sigma,a):
     return -a * np.log(1 - 1j*mu*u/a + sigma**2*u**2/(2*a))
 
@@ -262,96 +186,43 @@ def phi_CIR(t, z, kappa, lam, y0):
 def phi_VGCIR(u, t, mu, sigma, a, kappa, lam, y0):
     return phi_CIR(t, -eta_VG(u, mu, sigma, a), kappa, lam, y0)
 
+def phi_logS(u, t, r, mu, sigma, a, kappa, lam, y0, model="VGSAM"):
+    correction = eta_VG(-1j, mu, sigma, a)
+    if model == "VGSAM":
+        z = 1j*u*correction - eta_VG(u, mu, sigma, a)
+        clock_cf = phi_CIR(t, z, kappa, lam, y0)
+    elif model == "VGSA":
+        numerator = phi_CIR(t, -eta_VG(u, mu, sigma, a), kappa, lam, y0)
+        denominator = phi_CIR(t, -correction, kappa, lam, y0)
+        clock_cf = numerator * np.exp(-1j*u*np.log(denominator))
+    else:
+        raise ValueError("model must be 'VGSA' or 'VGSAM'")
+    return np.exp(1j*u*(np.log(S0)+(r-q)*t)) * clock_cf
 
-def phi_logS(u, t, r, mu, sigma, a, kappa, lam, y0):
-    z = 1j*u*eta_VG(-1j, mu, sigma, a) - eta_VG(u, mu, sigma, a)
-    return np.exp(1j*u*(np.log(S0)+(r-q)*t)) * phi_CIR(t, z, kappa, lam, y0)
-
-
-def call_price(K, t, r, mu, sigma, a, kappa, lam, y0):
+def call_price(K, t, r, mu, sigma, a, kappa, lam, y0, model="VGSAM"):
     params = (mu, sigma, a, kappa, lam, y0)
     def integrand1(u):
-        return np.real(
-            np.exp(-1j*u*np.log(K)) *
-            phi_logS(u-1j, t, r, *params) /
-            (1j*u*phi_logS(-1j, t, r, *params))
-        )
+        return np.real(np.exp(-1j*u*np.log(K)) *phi_logS(u-1j, t, r, *params, model=model) /(1j*u*phi_logS(-1j, t, r, *params, model=model)))
     def integrand2(u):
-        return np.real(
-            np.exp(-1j*u*np.log(K)) *
-            phi_logS(u, t, r, *params) /
-            (1j*u)
-        )
+        return np.real(np.exp(-1j*u*np.log(K)) *phi_logS(u, t, r, *params, model=model) /(1j*u))
     P1 = 0.5 + simpson(integrand1(u), x=u)/np.pi
     P2 = 0.5 + simpson(integrand2(u), x=u)/np.pi
-
     return S0*np.exp(-q*t)*P1 - K*np.exp(-r*t)*P2
 
-def residuals(params):
+def residuals(params, model="VGSAM"):
     mu, sigma, a, kappa, lam, y0 = params
-
     if 1 - mu/a - sigma**2/(2*a) <= 0:
         return np.full(len(K), 1e4)
-
-    model = np.array([
-        call_price(K[i], T[i], r[i], *params)
-        for i in range(len(K))
-    ])
-
+    
+    model = np.array([call_price(K[i], T[i], r[i], *params, model=model) for i in range(len(K))])
     if not np.all(np.isfinite(model)):
         return np.full(len(K), 1e4)
-
     return (model - market)/market
 
-
-params = (0.1, 0.2, 1, 2, 0.5, 1)
-
-errors = residuals(params)
-
-print(errors[:5])
-print("Sum of squared relative errors:", np.sum(errors**2))
-
-
-# VG-CIR calibration
-
-lower = [-5, 1e-4, 0.01, 0.01, 0.01, 0.001]
-upper = [5, 5, 200, 200, 50, 50]
-
-initial_guesses = [
-    [0, 0.1, 50, 10, 4, 5],
-]
-
-best = None
-
-for initial in initial_guesses:
-    result = least_squares(residuals,initial,bounds=(lower, upper),x_scale="jac",max_nfev=500)
-    if best is None or np.sum(result.fun**2) < np.sum(best.fun**2):
-        best = result
-
-result = best
-
-print("Estimated VG-CIR parameters:", result.x)
-
-
-# VG-CIR ARPE
-vg_prices = np.array([
-    call_price(K[i], T[i], r[i], *result.x)
-    for i in range(len(K))
-])
-
-vg_arpe = 100*np.mean(np.abs((vg_prices-market)/market))
-
-
-
 # Variance Gamma benchmark
-
 def phi_logS_VG(u, t, r, mu, sigma, a):
     correction = eta_VG(-1j, mu, sigma, a)
-
-    return np.exp(
-        1j*u*(np.log(S0)+(r-q)*t)
-        + t*(eta_VG(u, mu, sigma, a)-1j*u*correction)
-    )
+    return np.exp(1j*u*(np.log(S0)+(r-q)*t)+ t*(eta_VG(u, mu, sigma, a)-1j*u*correction))
 
 
 def call_price_VG(K, t, r, mu, sigma, a):
@@ -376,55 +247,14 @@ def residuals_VG(params):
     if 1 - mu/a - sigma**2/(2*a) <= 0:
         return np.full(len(K), 1e4)
 
-    model = np.array([
-        call_price_VG(K[i], T[i], r[i], *params)
-        for i in range(len(K))
-    ])
+    model = np.array([call_price_VG(K[i], T[i], r[i], *params) for i in range(len(K))])
 
     if not np.all(np.isfinite(model)):
         return np.full(len(K), 1e4)
 
     return (model-market)/market
 
-
-lower_VG = [-5, 1e-4, 0.01]
-upper_VG = [5, 5, 200]
-
-initial_guesses_VG = [
-    [0, 0.15, 5],
-]
-
-best_VG = None
-
-for initial in initial_guesses_VG:
-
-    result_VG = least_squares(
-        residuals_VG,
-        initial,
-        bounds=(lower_VG, upper_VG),
-        x_scale="jac",
-        max_nfev=500
-    )
-
-    if best_VG is None or np.sum(result_VG.fun**2) < np.sum(best_VG.fun**2):
-        best_VG = result_VG
-
-estimated_VG = best_VG.x
-
-prices_VG = np.array([
-    call_price_VG(K[i], T[i], r[i], *estimated_VG)
-    for i in range(len(K))
-])
-
-arpe_VG = 100*np.mean(
-    np.abs((prices_VG-market)/market)
-)
-
-
 # Black-Scholes benchmark
-
-
-
 def bs_prices(vol):
     v = vol*np.sqrt(T)
 
@@ -437,21 +267,201 @@ def bs_prices(vol):
 def bs_loss(vol):
     return np.sum(((bs_prices(vol)-market)/market)**2)
 
+handler = DataHandler()
+grid = build_calibration_grid(handler)
 
-bs_fit = minimize_scalar(bs_loss,bounds=(0.001, 5),method="bounded")
 
+K = grid["strike"].to_numpy(dtype=float)
+T = grid["T"].to_numpy(dtype=float)
+r = np.full(len(K), 0.0365529)
+market = grid["price"].to_numpy(dtype=float)
+
+
+u = np.linspace(1e-6, 300,3001)
+
+
+
+# Calibrate the two models independently, keeping the same options and bounds.
+models = ["VGSA", "VGSAM"]
+lower = [-5, 1e-4, 0.01, 1e-5, 0.01, 0.001]
+upper = [5, 5, 200, 200, 50, 50]
+initial_guesses = [[0, 0.1, 50, 10, 4, 5], [0, 0.2, 10, 5, 2, 1]]
+
+results = {}
+prices = {}
+arpes = {}
+
+for model in models:
+    best = None
+    for initial in initial_guesses:
+        fit = least_squares(
+            lambda params: residuals(params, model=model),
+            initial, bounds=(lower, upper), x_scale="jac", max_nfev=500
+        )
+        if best is None or np.sum(fit.fun**2) < np.sum(best.fun**2):
+            best = fit
+
+    results[model] = best
+    prices[model] = np.array([
+        call_price(K[i], T[i], r[i], *best.x, model=model)
+        for i in range(len(K))
+    ])
+    arpes[model] = 100 * np.mean(np.abs((prices[model] - market)/market))
+
+# Variance Gamma benchmark (unchanged)
+lower_VG = [-5, 1e-4, 0.01]
+upper_VG = [5, 5, 200]
+initial_guesses_VG = [[0, 0.15, 5]]
+best_VG = None
+for initial in initial_guesses_VG:
+    fit = least_squares(residuals_VG, initial, bounds=(lower_VG, upper_VG),
+                        x_scale="jac", max_nfev=500)
+    if best_VG is None or np.sum(fit.fun**2) < np.sum(best_VG.fun**2):
+        best_VG = fit
+
+estimated_VG = best_VG.x
+prices_VG = np.array([
+    call_price_VG(K[i], T[i], r[i], *estimated_VG)
+    for i in range(len(K))
+])
+arpe_VG = 100 * np.mean(np.abs((prices_VG - market)/market))
+
+# Black-Scholes benchmark (unchanged)
+bs_fit = minimize_scalar(bs_loss, bounds=(0.001, 5), method="bounded")
 bs_prices_fitted = bs_prices(bs_fit.x)
+bs_arpe = 100 * np.mean(np.abs((bs_prices_fitted - market)/market))
 
-bs_arpe = 100*np.mean(np.abs((bs_prices_fitted-market)/market))
+names_VGCIR = ["mu", "sigma", "a", "kappa", "lambda", "y0"]
+threshold = 20
+mask = market >= threshold
 
+for model in models:
+    print("\n--- Estimated", model, "parameters ---")
+    for name, value in zip(names_VGCIR, results[model].x):
+        print(name, "=", round(value, 8))
 
-# Comparison
+    arpe_not_cheap = 100 * np.mean(
+        np.abs((prices[model][mask] - market[mask])/market[mask])
+    ) if np.any(mask) else float("nan")
+    print(model, "ARPE:", round(arpes[model], 3), "%")
+    print(model, "ARPE (market price >= $20):", round(arpe_not_cheap, 3), "%")
+    print("Number of options considered:", np.sum(mask))
 
-print("\nEstimated VG-CIR parameters:", result.x)
-print("Estimated VG parameters:", estimated_VG)
+    # Equivalent CGM and CIR parameters with initial clock rate normalized to 1.
+    mu, sigma, a, kappa, lam, y0 = results[model].x
+    root = np.sqrt(mu**2 + 2*a*sigma**2)
+    C = a*y0
+    G = (root + mu)/sigma**2
+    M = (root - mu)/sigma**2
+    theta = 1/y0
+    lam_new = lam/np.sqrt(y0)
+    print("---", model, "parameters (CGM, y0 = 1) ---")
+    print("C =", round(C, 8), "\nG =", round(G, 8),
+          "\nM =", round(M, 8), "\nkappa =", round(kappa, 8),
+          "\ntheta =", round(theta, 8), "\nlambda =", round(lam_new, 8),
+          "\ny0 = 1 (normalized)")
 
-print("\nVG-CIR ARPE:       ", round(vg_arpe, 3), "%")
+print("\n--- Estimated Variance Gamma parameters ---")
+for name, value in zip(["mu", "sigma", "a"], estimated_VG):
+    print(name, "=", round(value, 8))
+
+print("\n--- Estimated Black-Scholes parameters ---")
+print("S0 =", S0, "\nr =", r[0], "\nq =", q,
+      "\nsigma =", round(bs_fit.x, 8))
+
+print("\n--- Model comparison ---")
+for model in models:
+    print(model, "ARPE:", round(arpes[model], 3), "%")
 print("Variance Gamma ARPE:", round(arpe_VG, 3), "%")
 print("Black-Scholes ARPE:", round(bs_arpe, 3), "%")
+
+
+
+
+def plot_pricing_errors():
+    maturities = np.unique(T)
+    maturities = maturities[
+        ~np.isclose(maturities, 171 / 365)
+    ]
+
+    fig, axes = plt.subplots(
+        3, 2,
+        figsize=(10, 10),
+        constrained_layout=True
+    )
+
+    axes = axes.flatten()
+
+    for ax, maturity in zip(axes, maturities):
+        indices = np.where(np.isclose(T, maturity))[0]
+        indices = indices[np.argsort(K[indices])]
+
+        strikes = K[indices]
+
+        ax.plot(
+            strikes,
+            prices["VGSA"][indices] - market[indices],
+            "o-", label="VGSA", markersize=3
+        )
+
+        ax.plot(
+            strikes,
+            prices["VGSAM"][indices] - market[indices],
+            "o-", label="VGSAM", markersize=3
+        )
+
+        ax.plot(
+            strikes,
+            prices_VG[indices] - market[indices],
+            "o-", label="Variance Gamma", markersize=3
+        )
+
+        ax.plot(
+            strikes,
+            bs_prices_fitted[indices] - market[indices],
+            "o-", label="Black-Scholes", markersize=3
+        )
+
+        ax.axhline(0, color="black", linewidth=0.8)
+
+        ax.set_title(
+            "Maturity: " + str(round(maturity * 365)) + " days"
+        )
+        ax.set_xlabel("Strike")
+        ax.set_ylabel("Pricing Error")
+        ax.grid(True, alpha=0.4)
+
+    # Use the last subplot for the legend
+    axes[-1].axis("off")
+
+    handles, labels = axes[0].get_legend_handles_labels()
+
+    axes[-1].legend(
+        handles, labels,
+        loc="center",
+        fontsize=12,
+        frameon=False
+    )
+
+    fig.suptitle(
+        "Pricing Errors vs Strike",
+        fontsize=16
+    )
+
+    plt.savefig(
+        "pricing_errors_by_maturity.png",
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.savefig(
+        "pricing_errors_by_maturity.pdf",
+        bbox_inches="tight"
+    )
+
+    plt.show()
+
+
+plot_pricing_errors()
 
 
