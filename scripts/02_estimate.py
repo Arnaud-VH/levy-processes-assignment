@@ -7,6 +7,7 @@ from scipy.special import ndtr
 from scipy.optimize import minimize_scalar
 from scipy.integrate import simpson
 from scipy.optimize import least_squares
+from scipy.optimize import OptimizeResult
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_FILE = ROOT / "data" / "Call_data.xlsx"
@@ -287,16 +288,36 @@ lower = [-5, 1e-4, 0.01, 1e-5, 0.01, 0.001]
 upper = [5, 5, 200, 200, 50, 50]
 initial_guesses = [[0, 0.1, 50, 10, 4, 5], [0, 0.2, 10, 5, 2, 1]]
 
+# Previous best estimates (saved session, used in params.py and the report).
+# The error surface is flat with many stopping points, so the result depends on the start
+# and can change between machines. Starting from these, the run reproduces the reported numbers.
+previous_best = {
+    "VGSA":  [-0.03335614567686568, 0.05303993913737418, 191.72073099304285, 0.00015950926578709468, 8.006189358805798, 8.03008732836161],
+    "VGSAM": [-0.39081892729156437, 0.08491010237680281, 6.980676409355045, 31.120775771805082, 7.272904595910182, 3.4391761095020343],
+}
+
+
+def best_fit(residual_function, starts, bounds):
+    # Runs least_squares from every start and keeps the lowest cost.
+    # Each start is also scored as it is, so the result is never worse than the best known point.
+    best = None
+    for initial in starts:
+        x0 = np.array(initial, dtype=float)
+        fun0 = residual_function(x0)
+        start = OptimizeResult(x=x0, fun=fun0, cost=0.5*np.sum(fun0**2))
+        fit = least_squares(residual_function, initial, bounds=bounds, x_scale="jac", max_nfev=500)
+        for candidate in (start, fit):
+            if best is None or candidate.cost < best.cost:
+                best = candidate
+    return best
+
 results = {}
 prices = {}
 arpes = {}
 
 for model in models:
-    best = None
-    for initial in initial_guesses:
-        fit = least_squares(lambda params: residuals(params, model=model),initial, bounds=(lower, upper), x_scale="jac", max_nfev=500)
-        if best is None or np.sum(fit.fun**2) < np.sum(best.fun**2):
-            best = fit
+    best = best_fit(lambda params: residuals(params, model=model),
+                    [previous_best[model]] + initial_guesses, (lower, upper))
 
     results[model] = best
     prices[model] = np.array([call_price(K[i], T[i], r[i], *best.x, model=model)for i in range(len(K))])
@@ -306,11 +327,8 @@ for model in models:
 lower_VG = [-5, 1e-4, 0.01]
 upper_VG = [5, 5, 200]
 initial_guesses_VG = [[0, 0.15, 5]]
-best_VG = None
-for initial in initial_guesses_VG:
-    fit = least_squares(residuals_VG, initial, bounds=(lower_VG, upper_VG), x_scale="jac", max_nfev=500)
-    if best_VG is None or np.sum(fit.fun**2) < np.sum(best_VG.fun**2):
-        best_VG = fit
+previous_best_VG = [-0.28833602197234887, 0.14632558907378213, 18.54184477665068]
+best_VG = best_fit(residuals_VG, [previous_best_VG] + initial_guesses_VG, (lower_VG, upper_VG))
 
 estimated_VG = best_VG.x
 prices_VG = np.array([
@@ -405,5 +423,3 @@ def plot_pricing_errors():
 
 
 plot_pricing_errors()
-
-
