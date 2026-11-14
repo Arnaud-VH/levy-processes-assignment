@@ -224,3 +224,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# LaTeX report (written on Overleaf, kept out of git)
+report/
+*.tex
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+*.synctex.gz
+*.toc
+*.out
+*.fls
+*.fdb_latexmk

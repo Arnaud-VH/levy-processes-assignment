@@ -4,7 +4,7 @@ Default model parameter values are taken from the Schoutens book Table 7.3 on pa
 Market model parameters are also taken from the book. 
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 @dataclass
 class VGCIRParams:
@@ -54,3 +54,19 @@ BS_SIGMA = 0.14388654
 
 #Our dataset (Part 1): S&P 500 on 31/03/2026, same r and q as used in the calibration (02_estimate.py)
 DATASET_MARKET = MarketParams(S0=6528.52, r=0.0365529, q=0.012856)
+
+#Variance Gamma benchmark (no stochastic clock) estimated in 02_estimate.py, in the (mu, sigma, a) form of the report
+VG_MU, VG_SIGMA, VG_A = -0.28833602, 0.14632559, 18.54184478
+
+#Sensitivity analysis (Samuel): one parameter of the estimate is changed at a time (ceteris paribus).
+#Grouped by parameter, used in 03_simulate_paths.py
+P = ESTIMATED_VGCIR
+SENSITIVITY_CASES = {
+    "C": {"C +20%": replace(P, C=1.2 * P.C), "C -20%": replace(P, C=0.8 * P.C)},
+    #G = M gives a symmetric VG, G > M swaps G and M of the estimate
+    "G": {"G = M": replace(P, G=P.M), "G > M": replace(P, G=P.M, M=P.G)},
+    "eta": {"eta +20%": replace(P, eta=1.2 * P.eta), "eta -20%": replace(P, eta=0.8 * P.eta)},
+    "kappa": {"kappa +20%": replace(P, kappa=1.2 * P.kappa), "kappa -20%": replace(P, kappa=0.8 * P.kappa)},
+    "lambda": {"lambda +20%": replace(P, lam=1.2 * P.lam), "lambda -20%": replace(P, lam=0.8 * P.lam)},
+}
+del P
