@@ -271,17 +271,17 @@ handler = DataHandler()
 grid = build_calibration_grid(handler)
 
 
-K = grid["strike"].to_numpy(dtype=float)
-T = grid["T"].to_numpy(dtype=float)
-r = np.full(len(K), 0.0365529)
-market = grid["price"].to_numpy(dtype=float)
+#We obtain from the grid object the relevant information
+K = grid["strike"].to_numpy(dtype=float)        #Strike
+T = grid["T"].to_numpy(dtype=float)             #Maturity
+r = np.full(len(K), 0.0365529)                  #Interest rate
+market = grid["price"].to_numpy(dtype=float)    #Price of the option
 
 
 u = np.linspace(1e-6, 300,3001)
 
 
-
-# Calibrate the two models independently, keeping the same options and bounds.
+#The models variable is used in order so specify which model we are working with
 models = ["VGSA", "VGSAM"]
 lower = [-5, 1e-4, 0.01, 1e-5, 0.01, 0.001]
 upper = [5, 5, 200, 200, 50, 50]
@@ -294,39 +294,30 @@ arpes = {}
 for model in models:
     best = None
     for initial in initial_guesses:
-        fit = least_squares(
-            lambda params: residuals(params, model=model),
-            initial, bounds=(lower, upper), x_scale="jac", max_nfev=500
-        )
+        fit = least_squares(lambda params: residuals(params, model=model),initial, bounds=(lower, upper), x_scale="jac", max_nfev=500)
         if best is None or np.sum(fit.fun**2) < np.sum(best.fun**2):
             best = fit
 
     results[model] = best
-    prices[model] = np.array([
-        call_price(K[i], T[i], r[i], *best.x, model=model)
-        for i in range(len(K))
-    ])
+    prices[model] = np.array([call_price(K[i], T[i], r[i], *best.x, model=model)for i in range(len(K))])
     arpes[model] = 100 * np.mean(np.abs((prices[model] - market)/market))
 
-# Variance Gamma benchmark (unchanged)
+# Variance Gamma benchmark 
 lower_VG = [-5, 1e-4, 0.01]
 upper_VG = [5, 5, 200]
 initial_guesses_VG = [[0, 0.15, 5]]
 best_VG = None
 for initial in initial_guesses_VG:
-    fit = least_squares(residuals_VG, initial, bounds=(lower_VG, upper_VG),
-                        x_scale="jac", max_nfev=500)
+    fit = least_squares(residuals_VG, initial, bounds=(lower_VG, upper_VG), x_scale="jac", max_nfev=500)
     if best_VG is None or np.sum(fit.fun**2) < np.sum(best_VG.fun**2):
         best_VG = fit
 
 estimated_VG = best_VG.x
 prices_VG = np.array([
-    call_price_VG(K[i], T[i], r[i], *estimated_VG)
-    for i in range(len(K))
-])
+    call_price_VG(K[i], T[i], r[i], *estimated_VG)for i in range(len(K))])
 arpe_VG = 100 * np.mean(np.abs((prices_VG - market)/market))
 
-# Black-Scholes benchmark (unchanged)
+# Black-Scholes benchmark
 bs_fit = minimize_scalar(bs_loss, bounds=(0.001, 5), method="bounded")
 bs_prices_fitted = bs_prices(bs_fit.x)
 bs_arpe = 100 * np.mean(np.abs((bs_prices_fitted - market)/market))
@@ -340,9 +331,7 @@ for model in models:
     for name, value in zip(names_VGCIR, results[model].x):
         print(name, "=", round(value, 8))
 
-    arpe_not_cheap = 100 * np.mean(
-        np.abs((prices[model][mask] - market[mask])/market[mask])
-    ) if np.any(mask) else float("nan")
+    arpe_not_cheap = 100 * np.mean(np.abs((prices[model][mask] - market[mask])/market[mask])) if np.any(mask) else float("nan")
     print(model, "ARPE:", round(arpes[model], 3), "%")
     print(model, "ARPE (market price >= $20):", round(arpe_not_cheap, 3), "%")
     print("Number of options considered:", np.sum(mask))
@@ -356,18 +345,14 @@ for model in models:
     theta = 1/y0
     lam_new = lam/np.sqrt(y0)
     print("---", model, "parameters (CGM, y0 = 1) ---")
-    print("C =", round(C, 8), "\nG =", round(G, 8),
-          "\nM =", round(M, 8), "\nkappa =", round(kappa, 8),
-          "\ntheta =", round(theta, 8), "\nlambda =", round(lam_new, 8),
-          "\ny0 = 1 (normalized)")
+    print("C =", round(C, 8), "\nG =", round(G, 8),"\nM =", round(M, 8), "\nkappa =", round(kappa, 8),"\ntheta =", round(theta, 8), "\nlambda =", round(lam_new, 8),"\ny0 = 1 (normalized)")
 
 print("\n--- Estimated Variance Gamma parameters ---")
 for name, value in zip(["mu", "sigma", "a"], estimated_VG):
     print(name, "=", round(value, 8))
 
 print("\n--- Estimated Black-Scholes parameters ---")
-print("S0 =", S0, "\nr =", r[0], "\nq =", q,
-      "\nsigma =", round(bs_fit.x, 8))
+print("S0 =", S0, "\nr =", r[0], "\nq =", q,"\nsigma =", round(bs_fit.x, 8))
 
 print("\n--- Model comparison ---")
 for model in models:
@@ -380,15 +365,9 @@ print("Black-Scholes ARPE:", round(bs_arpe, 3), "%")
 
 def plot_pricing_errors():
     maturities = np.unique(T)
-    maturities = maturities[
-        ~np.isclose(maturities, 171 / 365)
-    ]
+    maturities = maturities[~np.isclose(maturities, 171 / 365)]
 
-    fig, axes = plt.subplots(
-        3, 2,
-        figsize=(10, 10),
-        constrained_layout=True
-    )
+    fig, axes = plt.subplots(3, 2,figsize=(10, 10),constrained_layout=True)
 
     axes = axes.flatten()
 
@@ -398,35 +377,14 @@ def plot_pricing_errors():
 
         strikes = K[indices]
 
-        ax.plot(
-            strikes,
-            prices["VGSA"][indices] - market[indices],
-            "o-", label="VGSA", markersize=3
-        )
-
-        ax.plot(
-            strikes,
-            prices["VGSAM"][indices] - market[indices],
-            "o-", label="VGSAM", markersize=3
-        )
-
-        ax.plot(
-            strikes,
-            prices_VG[indices] - market[indices],
-            "o-", label="Variance Gamma", markersize=3
-        )
-
-        ax.plot(
-            strikes,
-            bs_prices_fitted[indices] - market[indices],
-            "o-", label="Black-Scholes", markersize=3
-        )
+        ax.plot(strikes,prices["VGSA"][indices] - market[indices],"o-", label="VGSA", markersize=3)
+        ax.plot(strikes,prices["VGSAM"][indices] - market[indices],"o-", label="VGSAM", markersize=3)
+        ax.plot(strikes,prices_VG[indices] - market[indices],"o-", label="Variance Gamma", markersize=3)
+        ax.plot(strikes,bs_prices_fitted[indices] - market[indices],"o-", label="Black-Scholes", markersize=3)
 
         ax.axhline(0, color="black", linewidth=0.8)
 
-        ax.set_title(
-            "Maturity: " + str(round(maturity * 365)) + " days"
-        )
+        ax.set_title("Maturity: " + str(round(maturity * 365)) + " days")
         ax.set_xlabel("Strike")
         ax.set_ylabel("Pricing Error")
         ax.grid(True, alpha=0.4)
@@ -436,28 +394,12 @@ def plot_pricing_errors():
 
     handles, labels = axes[0].get_legend_handles_labels()
 
-    axes[-1].legend(
-        handles, labels,
-        loc="center",
-        fontsize=12,
-        frameon=False
-    )
+    axes[-1].legend(handles, labels,loc="center",fontsize=12,frameon=False)
 
-    fig.suptitle(
-        "Pricing Errors vs Strike",
-        fontsize=16
-    )
+    fig.suptitle("Pricing Errors vs Strike",fontsize=16)
 
-    plt.savefig(
-        "pricing_errors_by_maturity.png",
-        dpi=300,
-        bbox_inches="tight"
-    )
-
-    plt.savefig(
-        "pricing_errors_by_maturity.pdf",
-        bbox_inches="tight"
-    )
+    plt.savefig("pricing_errors_by_maturity.png",dpi=300,bbox_inches="tight")
+    plt.savefig("pricing_errors_by_maturity.pdf",bbox_inches="tight")
 
     plt.show()
 
